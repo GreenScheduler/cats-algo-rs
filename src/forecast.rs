@@ -70,12 +70,12 @@ impl Eq for CarbonIntensityAverageEstimate {}
 
 #[derive(Debug)]
 pub struct WindowedForecast {
-    data: Vec<CarbonIntensityPointEstimate>,
-    duration: i64, // in minutes
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
-    ndata: usize,
-    data_stepsize: i64,
+    pub data: Vec<CarbonIntensityPointEstimate>,
+    pub duration: i64, // in minutes
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub ndata: usize,
+    pub data_stepsize: i64,
     pub index: usize,
 
 }
@@ -83,25 +83,33 @@ pub struct WindowedForecast {
 impl WindowedForecast {
     pub fn new(data: Vec<CarbonIntensityPointEstimate>, duration: i64, start: DateTime<Utc>) -> WindowedForecast {
 
-        let data_stepsize = data.get(1).expect("data must have at least 2 elements").datetime.timestamp() - data.get(0).expect("data must have at least 2 elements").datetime.timestamp();
+        let data_stepsize = data[1].datetime.timestamp() - data[0].datetime.timestamp();
 
-        let end = start.timestamp() + duration * 60; // add to struct
+        let end = start.timestamp() + (duration * 60); // add to struct
 
 
-
-        let data: Vec<CarbonIntensityPointEstimate> = data.into_iter().filter(|d| d.datetime.timestamp() > start.timestamp() && d.datetime.timestamp() < end).collect();
-
-        fn bisect_left(data: &[CarbonIntensityPointEstimate], t: i64, data_stepsize: &i64) -> usize {
+        fn bisect_right(data: &Vec<CarbonIntensityPointEstimate>, t: i64) -> usize {
             for (i, d) in data.iter().enumerate() {
-                if d.datetime.timestamp() + data_stepsize >= t {
-                    return i;
+                if d.datetime.timestamp() > t {
+                    return i - 1;
                 }
             }
-            panic!("t is greater than the last element in data");
+            0
         }
 
-        let ndata = bisect_left(&data, end, &data_stepsize);
+        let skip = bisect_right(&data, start.timestamp());
+        let data = data.iter().skip(skip).cloned().collect::<Vec<CarbonIntensityPointEstimate>>();
 
+        fn bisect_left(data: &Vec<CarbonIntensityPointEstimate>, t: i64, data_stepsize: i64) -> usize {
+            for (i, d) in data.iter().enumerate() {
+                if d.datetime.timestamp() + data_stepsize >= t {
+                    return i + 1;
+                }
+            }
+            0
+        }
+
+        let ndata = bisect_left(&data, end, data_stepsize); 
 
         let end = DateTime::from_timestamp(end, 0).expect("Could not convert timestamp to DateTime").with_timezone(&Utc);
 
@@ -148,7 +156,7 @@ impl WindowedForecast {
         );
 
 
-        let rbound = if self.ndata == self.data.len() {
+        let rbound = if (index + self.ndata) == self.data.len() {
             *self.data.last().unwrap()
         } else {
             WindowedForecast::interp(
@@ -165,7 +173,7 @@ impl WindowedForecast {
         window_data.extend(self.data.iter().skip(index).take(self.ndata));
         window_data.extend(vec![rbound]);
 
-        let acc = window_data.iter().rev().zip(window_data.iter().skip(1)).map(|(a, b)| {
+        let acc = window_data.iter().zip(window_data.iter().skip(1)).map(|(a, b)| {
             0.5 * (a.value + b.value) * (b.datetime - a.datetime).num_seconds() as f64
         }).collect::<Vec<f64>>();
 

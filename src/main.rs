@@ -56,16 +56,14 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_has_right_length() {
        let data = make_test_data();
         let window_size = 160;
 
         let start = data.first().unwrap().datetime;
         let wf = forecast::WindowedForecast::new(data, window_size, start);
-        println!("len: {:?}", wf);
 
-        // assert_eq!(wf, 200 - 160 + 1);
+        assert_eq!(wf.len(), 41);
     }
 
     #[test]
@@ -80,17 +78,26 @@ mod test {
         let ndata = 200;
         let step = f64::consts::PI / (ndata as f64);
 
-        let expected: Vec<f64> = (0..ndata - window_size + 1).map(|i| {
-            ((i + window_size) as f64 * step).cos() - (i as f64 * step).cos()
+
+        fn compute(i: usize, window_size: i64, step: f64) -> f64 {
+            ((i as i64 + window_size) as f64 * step).cos() - (i as f64 * step).cos()
+        }
+        let expected: Vec<f64> = (0..=40).map(|i| {
+            compute(i, window_size, step)
         }).collect();
 
-        // average estimate
 
         let expected: Vec<f64> = expected.iter().map(|e| e / (window_size as f64 * step)).collect();
+        let actual: Vec<CarbonIntensityAverageEstimate> = wf.into_iter().collect();
 
-        for (i, e) in expected.iter().enumerate() {
-            let a = wf.index(i);
-            eprint!("{}", a.value - *e);
+
+        for (e, a) in expected.iter().zip(actual.iter()) {
+            let atol = 1e-8;
+            let rtel = 0.01;
+            let tol = (atol + rtel * a.value.abs());
+            let diff = (e - a.value).abs();
+            let close = diff  <= tol;
+            assert!(close);
         }
 
 
