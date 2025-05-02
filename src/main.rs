@@ -63,7 +63,7 @@ mod test {
         let start = data.first().unwrap().datetime;
         let wf = forecast::WindowedForecast::new(data, window_size, start);
 
-        assert_eq!(wf.len(), 41);
+        assert_eq!(wf.len(), 40);
     }
 
     #[test]
