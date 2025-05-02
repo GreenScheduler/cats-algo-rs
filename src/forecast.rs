@@ -189,7 +189,7 @@ impl WindowedForecast {
 }
 
     pub fn len(&self) -> usize {
-        self.data.len() - self.ndata + 1
+        self.data.len() - self.ndata
     }
 
 }
