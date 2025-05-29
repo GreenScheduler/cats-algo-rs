@@ -30,18 +30,22 @@ mod test {
 
     use core::f64;
 
-    use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+    use chrono::{DateTime, NaiveDate, Utc};
+    use csv::ReaderBuilder;
+    use std::fs::File;
+    use std::io::BufReader;
+    use std::path::Path;
 
     use super::*;
 
 
     // struct this better
-    fn make_test_data () -> Vec<forecast::CarbonIntensityPointEstimate> {
-        
-       let naive_date = NaiveDate::from_ymd(2023, 1, 1);
-        let naive_time = NaiveTime::from_hms(0, 0, 0);
-        let naive_datetime = naive_date.and_time(naive_time);
-        
+    fn make_test_data() -> Vec<forecast::CarbonIntensityPointEstimate> {
+        let naive_datetime = NaiveDate::from_ymd_opt(2023, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+
         let d: DateTime<Utc> = DateTime::from_utc(naive_datetime, Utc);
         let ndata = 200;
         let step = f64::consts::PI / (ndata as f64);
@@ -50,9 +54,41 @@ mod test {
             forecast::CarbonIntensityPointEstimate {
                 datetime: d + chrono::Duration::minutes(i),
                 value: -1.0 * f64::sin(i as f64 * step),
-            }
-        }).collect::<Vec<forecast::CarbonIntensityPointEstimate>>()
+            })
+            .collect::<Vec<forecast::CarbonIntensityPointEstimate>>()
+    }
 
+    fn read_sample_data(
+    ) -> Result<Vec<forecast::CarbonIntensityPointEstimate>, Box<dyn std::error::Error>> {
+        let file_path = Path::new("tests/carbon_intensity_24h.csv");
+        let file = File::open(file_path)?;
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(BufReader::new(file));
+
+        let mut data = Vec::new();
+
+        for result in rdr.records() {
+            let record = result?;
+            let datestr = &record[0];
+            let intensity_value = &record[3];
+
+            // Convert "2025-05-28T14:00:00Z" to RFC3339 (add +00:00 manually if needed)
+            let datetime_str = format!("{}:00+00:00", datestr.trim_end_matches('Z'));
+            let datetime = DateTime::parse_from_rfc3339(&datetime_str)?.with_timezone(&Utc);
+
+            let value: f64 = intensity_value.parse()?;
+
+            data.push(forecast::CarbonIntensityPointEstimate { value, datetime });
+        }
+
+        Ok(data)
+    }
+
+    #[test]
+    fn test_sample_data_length() {
+        let data = read_sample_data().unwrap();
+        assert_eq!(data.len(), 96);
     }
 
     #[test]
