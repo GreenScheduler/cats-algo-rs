@@ -6,7 +6,6 @@ use std::ops::Index;
 use chrono::DateTime;
 use chrono::Utc;
 
-
 #[derive(Debug, Copy, Clone)]
 pub struct CarbonIntensityPointEstimate {
     pub value: f64,
@@ -31,8 +30,6 @@ impl PartialOrd for CarbonIntensityPointEstimate {
     }
 }
 
-
-
 impl PartialEq for CarbonIntensityPointEstimate {
     fn eq(&self, other: &CarbonIntensityPointEstimate) -> bool {
         self.value == other.value
@@ -46,7 +43,6 @@ pub struct CarbonIntensityAverageEstimate {
     end: DateTime<Utc>,
 }
 
-
 impl PartialOrd for CarbonIntensityAverageEstimate {
     fn partial_cmp(&self, other: &CarbonIntensityAverageEstimate) -> Option<std::cmp::Ordering> {
         self.value.partial_cmp(&other.value)
@@ -55,10 +51,11 @@ impl PartialOrd for CarbonIntensityAverageEstimate {
 
 impl Ord for CarbonIntensityAverageEstimate {
     fn cmp(&self, other: &CarbonIntensityAverageEstimate) -> std::cmp::Ordering {
-        self.value.partial_cmp(&other.value).expect("Could not compare values")
+        self.value
+            .partial_cmp(&other.value)
+            .expect("Could not compare values")
     }
 }
-
 
 impl PartialEq for CarbonIntensityAverageEstimate {
     fn eq(&self, other: &CarbonIntensityAverageEstimate) -> bool {
@@ -77,16 +74,17 @@ pub struct WindowedForecast {
     pub ndata: usize,
     pub data_stepsize: i64,
     pub index: usize,
-
 }
 
 impl WindowedForecast {
-    pub fn new(data: Vec<CarbonIntensityPointEstimate>, duration: i64, start: DateTime<Utc>) -> WindowedForecast {
-
+    pub fn new(
+        data: Vec<CarbonIntensityPointEstimate>,
+        duration: i64,
+        start: DateTime<Utc>,
+    ) -> WindowedForecast {
         let data_stepsize = data[1].datetime.timestamp() - data[0].datetime.timestamp();
 
         let end = start.timestamp() + (duration * 60); // add to struct
-
 
         fn bisect_right(data: &Vec<CarbonIntensityPointEstimate>, t: i64) -> usize {
             for (i, d) in data.iter().enumerate() {
@@ -98,9 +96,17 @@ impl WindowedForecast {
         }
 
         let skip = bisect_right(&data, start.timestamp());
-        let data = data.iter().skip(skip).cloned().collect::<Vec<CarbonIntensityPointEstimate>>();
+        let data = data
+            .iter()
+            .skip(skip)
+            .cloned()
+            .collect::<Vec<CarbonIntensityPointEstimate>>();
 
-        fn bisect_left(data: &Vec<CarbonIntensityPointEstimate>, t: i64, data_stepsize: i64) -> usize {
+        fn bisect_left(
+            data: &Vec<CarbonIntensityPointEstimate>,
+            t: i64,
+            data_stepsize: i64,
+        ) -> usize {
             for (i, d) in data.iter().enumerate() {
                 if d.datetime.timestamp() + data_stepsize >= t {
                     return i + 1;
@@ -109,9 +115,11 @@ impl WindowedForecast {
             0
         }
 
-        let ndata = bisect_left(&data, end, data_stepsize); 
+        let ndata = bisect_left(&data, end, data_stepsize);
 
-        let end = DateTime::from_timestamp(end, 0).expect("Could not convert timestamp to DateTime").with_timezone(&Utc);
+        let end = DateTime::from_timestamp(end, 0)
+            .expect("Could not convert timestamp to DateTime")
+            .with_timezone(&Utc);
 
         WindowedForecast {
             index: 0,
@@ -120,15 +128,15 @@ impl WindowedForecast {
             start,
             duration,
             end,
-            ndata
+            ndata,
         }
-
     }
 
-
-    fn interp(p1: &CarbonIntensityPointEstimate, p2: &CarbonIntensityPointEstimate, when: DateTime<Utc>) -> CarbonIntensityPointEstimate {
-
-
+    fn interp(
+        p1: &CarbonIntensityPointEstimate,
+        p2: &CarbonIntensityPointEstimate,
+        when: DateTime<Utc>,
+    ) -> CarbonIntensityPointEstimate {
         let timestep = p2.datetime.timestamp() - p1.datetime.timestamp();
 
         let slope = (p2.value - p1.value) / timestep as f64;
@@ -136,69 +144,69 @@ impl WindowedForecast {
         let offset = when.timestamp() - p1.datetime.timestamp();
 
         CarbonIntensityPointEstimate::new(p1.value + slope * offset as f64, when)
-
     }
-
 
     // This is not an ideomatic implementation of Index, because Index returns a reference not a
     // value
     pub fn index(&self, index: usize) -> CarbonIntensityAverageEstimate {
-
-
         let window_start = self.start.timestamp() + index as i64 * self.data_stepsize;
         let window_end = self.end.timestamp() + index as i64 * self.data_stepsize;
-
 
         let lbound = WindowedForecast::interp(
             self.data.get(index).expect("index out of bounds"),
             self.data.get(index + 1).expect("index out of bounds"),
-            DateTime::from_timestamp(window_start, 0).expect("Could not convert timestamp to DateTime").with_timezone(&Utc)
+            DateTime::from_timestamp(window_start, 0)
+                .expect("Could not convert timestamp to DateTime")
+                .with_timezone(&Utc),
         );
-
 
         let rbound = if (index + self.ndata) == self.data.len() {
             *self.data.last().unwrap()
         } else {
             WindowedForecast::interp(
-                self.data.get(index + self.ndata - 1).expect("index out of bounds"),
-                self.data.get(index + self.ndata).expect("index out of bounds"),
-                DateTime::from_timestamp(window_end, 0).expect("Could not convert timestamp to DateTime").with_timezone(&Utc)
+                self.data
+                    .get(index + self.ndata - 1)
+                    .expect("index out of bounds"),
+                self.data
+                    .get(index + self.ndata)
+                    .expect("index out of bounds"),
+                DateTime::from_timestamp(window_end, 0)
+                    .expect("Could not convert timestamp to DateTime")
+                    .with_timezone(&Utc),
             )
         };
 
-
-   
         // This is kinda gross... fix it later // FIXME
         let mut window_data = vec![lbound];
         window_data.extend(self.data.iter().skip(index).take(self.ndata));
         window_data.extend(vec![rbound]);
 
-        let acc = window_data.iter().zip(window_data.iter().skip(1)).map(|(a, b)| {
-            0.5 * (a.value + b.value) * (b.datetime - a.datetime).num_seconds() as f64
-        }).collect::<Vec<f64>>();
+        let acc = window_data
+            .iter()
+            .zip(window_data.iter().skip(1))
+            .map(|(a, b)| {
+                0.5 * (a.value + b.value) * (b.datetime - a.datetime).num_seconds() as f64
+            })
+            .collect::<Vec<f64>>();
 
-       let duration = window_data.last().unwrap().datetime - window_data.first().unwrap().datetime;
-    
+        let duration = window_data.last().unwrap().datetime - window_data.first().unwrap().datetime;
+
         CarbonIntensityAverageEstimate {
             value: acc.iter().sum::<f64>() / duration.num_seconds() as f64,
             start: window_data.first().unwrap().datetime,
             end: window_data.last().unwrap().datetime,
         }
-
-    
-}
+    }
 
     pub fn len(&self) -> usize {
         self.data.len() - self.ndata
     }
-
 }
 
 impl Iterator for WindowedForecast {
     type Item = CarbonIntensityAverageEstimate;
 
     fn next(&mut self) -> Option<Self::Item> {
-   
         if self.index < self.len() {
             let result = Some(self.index(self.index));
             self.index += 1;
@@ -206,15 +214,8 @@ impl Iterator for WindowedForecast {
         } else {
             None
         }
-
-
-  }
+    }
 }
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -233,7 +234,6 @@ mod tests {
         let b = CarbonIntensityPointEstimate::new(1.0, Utc::now());
         assert!(a < b);
     }
-
 
     #[test]
     fn test_order_by_value_eq() {
