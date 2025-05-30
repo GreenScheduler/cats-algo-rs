@@ -1,21 +1,23 @@
 mod forecast;
+use chrono::DateTime;
 use chrono::Utc;
 use forecast::CarbonIntensityAverageEstimate;
 
 struct AverageEstimate {
     now: CarbonIntensityAverageEstimate,
-    min: CarbonIntensityAverageEstimate,
+    min: Option<CarbonIntensityAverageEstimate>,
 }
 
 fn get_average_estimate(
     data: Vec<forecast::CarbonIntensityPointEstimate>,
     duration: i64,
+    start: DateTime<Utc>,
 ) -> AverageEstimate {
-    let wf = forecast::WindowedForecast::new(data, duration, Utc::now());
+    let wf = forecast::WindowedForecast::new(data, duration, start);
 
     AverageEstimate {
         now: wf.index(0),
-        min: wf.min().unwrap(),
+        min: wf.min(),
     }
 }
 
@@ -26,6 +28,7 @@ mod test {
 
     use core::f64;
 
+    use chrono::prelude::*;
     use chrono::{DateTime, NaiveDate, Utc};
     use csv::ReaderBuilder;
     use std::fs::File;
@@ -84,6 +87,41 @@ mod test {
     fn test_sample_data_length() {
         let data = read_sample_data().unwrap();
         assert_eq!(data.len(), 96);
+    }
+
+    #[test]
+    fn test_across_all_durations_non_half_hour() {
+        // test across all supported durations
+        let data = read_sample_data().unwrap();
+        let start = Utc.with_ymd_and_hms(2023, 5, 4, 12, 50, 0).unwrap();
+        for duration in 1..2821 {
+            let estimate = get_average_estimate(data.clone(), duration, start);
+            // Check that carbon intensity is actually lower in the minimum
+            assert!(estimate.min.unwrap().value <= estimate.now.value);
+        }
+    }
+
+    #[test]
+    fn test_across_all_durations_at_half_hour() {
+        // tests showing minimisation for an extra window as start time is at exactly half hour
+        let data = read_sample_data().unwrap();
+        let start = Utc.with_ymd_and_hms(2023, 5, 4, 12, 30, 0).unwrap();
+        for duration in 1..2851 {
+            let estimate = get_average_estimate(data.clone(), duration, start);
+            // Check that carbon intensity is actually lower in the minimum
+            assert!(estimate.min.unwrap().value <= estimate.now.value);
+        }
+    }
+
+    #[test]
+    fn test_across_durations_expect_failure_non_half_hour() {
+        // Expected failures as we do not find a valid window beyond the last data point
+        let data = read_sample_data().unwrap();
+        let start = Utc.with_ymd_and_hms(2023, 5, 4, 12, 50, 0).unwrap();
+        for duration in 2831..2851 {
+            let estimate = get_average_estimate(data.clone(), duration, start);
+            assert!(estimate.min.is_none());
+        }
     }
 
     #[test]
